@@ -1,0 +1,95 @@
+
+
+### Introduction
+Using personal activity devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+
+### Dataset description
+The data comes from http://groupware.les.inf.puc-rio.br/har.
+The dataset has five classes (sitting-down, standing-up, standing, walking, and sitting) collected on 8 hours of activities of 4 healthy subjects. It establishes a baseline performance index.
+There is a training and testing data set.
+
+
+### Loading and cleaning data
+The training dataset was cleaned by removing columns with empty fields and NA. The first column
+was removed since it contained only line numbers. After cleaning, the training data had 59 predictors which is plenty for creating a prediction model. 
+The first six variables are a combination of factors and timestamp variables. They are not
+directly measuring activity. Below is a scatterplot of the first six variables so one can observe any interaction with the outcome variable (classe).
+```{r scatterplot, fig.align='center',echo=FALSE}
+# Get training data and extract needed measurements
+trainData <- read.csv("./data/pml-training.csv",na.strings = c("NA",""))
+
+# tidy data
+naRemovedTrain <- trainData[,colSums(is.na(trainData)) < 100]
+tidyData <- subset(naRemovedTrain, select = -c(X))
+
+pairs(~classe+user_name+raw_timestamp_part_1+raw_timestamp_part_2+cvtd_timestamp+
+          new_window+num_window,data=tidyData,
+      main="Simple Scatterplot Matrix")
+```
+The scatterplot indicated that these variables had little effect on the outcome so
+they were removed from subsequent model building.
+The correlation function was run on this data set.  It showed high levels
+of correlation (greater than 90%) between the roll_belt variable and total_accel_belt, 
+and accel_belt_y variables. There was also high correlation between pitch_belt and accel_belt_x.  
+
+### Analysis with machine learning
+Several models were tried. They included gradient boosting machine with and without k folds and
+the random forest model and rpart tree model.  The rpart model had less than 50% accuracy.
+The random forest model and gbm with k fold sampling had accuracies of 96%.  For prediction,
+I choose to use the gbm model since it took less time to complete than the random forest.
+This model had relative influence of zero for accel_belt_x, accel_belt_y. The total_accel_belt
+had a .06 relative influence compared to 22.6 relative influence of the roll_belt. The
+correlation output matched closely with the model predictions.
+ 
+```{r models, fig.align='center',echo=FALSE}
+set.seed(23432)
+library(caret)
+#gbmFit1 <- train(classe ~.,data=tidyData[,7:58], method="gbm")
+
+# Data frame with predictor that don't explain the outcome removed
+bestPredict <- subset(tidyData, select = -c(1:6,10,11,21,23,26,35,51))
+
+#rfFit1 <-  train(classe ~.,data=predictData[,7:59], method="rf")
+## 10-fold CV
+fitControl <- trainControl(method = "repeatedcv",
+                           number = 10,
+                            ## repeated ten times
+                            repeats = 10)
+
+gbmFit2 <- train(classe ~.,data=tidyData[,7:59], method="gbm", 
+                 trControl = fitControl, verbose = FALSE)
+print(gbmFit2$results)
+
+#rpartFit <- train(classe ~.,data=tidyData[,7:59], method="rpart", trControl = fitControl)
+
+```
+
+
+### Plots
+A plot of the gbm model accurracy.  The model achieves 96% accuracy with 150 iterations
+and a depth of 3.
+```{r myplots,fig.width=14, fig.height=12, fig.align='center',echo=FALSE}
+library(ggplot2)
+trellis.par.set(caretTheme())
+ggplot(gbmFit2)
+
+```
+
+### Prediction with 20 test cases
+This is prediction of the classe for the 20 tests and a table of this information.
+The out-of-sample error is the error rate you get on a new data set. It is sometimes called 
+generalization error. The out of sample error for the activity test data will be greater than the in sample error of 4% but not much more. With gbm model, the table showed an error rate of zero.
+```{r predict, echo=TRUE}
+# Load test data
+testData <- read.csv("./data/pml-testing.csv",na.strings = c("NA",""))
+
+# tidy test data
+tidyTest <- testData[,colSums(is.na(testData)) < 10]
+
+predict(gbmFit2,newdata=tidyTest[,8:59])
+
+table(predict(gbmFit2,newdata=tidyTest[,8:59]),tidyTest$problem_id)
+
+```
+ 
